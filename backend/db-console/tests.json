@@ -1,20 +1,26 @@
 {
   "tests": [
     {
-      "name": "Get all records",
+      "name": "Get all materials",
       "method": "GET",
       "path": "/",
+      "headers": {
+        "X-Table-Name": "materials"
+      },
       "expectedStatus": 200
     },
     {
-      "name": "Create new record",
+      "name": "Create new material",
       "method": "POST",
       "path": "/",
+      "headers": {
+        "X-Table-Name": "materials"
+      },
       "body": {
-        "title": "Test Record",
-        "description": "Test description",
-        "category": "Test",
-        "status": "active"
+        "name": "Test Material",
+        "unit": "кг",
+        "price_per_unit": 100.00,
+        "stock_quantity": 50.00
       },
       "expectedStatus": 201
     }

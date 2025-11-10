@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
   TableBody,
@@ -31,43 +32,69 @@ import Icon from '@/components/ui/icon';
 
 const API_URL = 'https://functions.poehali.dev/17506c36-0d59-467f-9d55-8509d4f6ad75';
 
-interface Record {
+interface Material {
   id: number;
-  title: string;
-  description: string;
-  category: string;
-  status: string;
+  name: string;
+  unit: string;
+  price_per_unit: number;
+  stock_quantity: number;
   created_at: string;
   updated_at: string;
 }
 
+interface Operation {
+  id: number;
+  name: string;
+  description: string;
+  cost: number;
+  duration_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Order {
+  id: number;
+  customer_name: string;
+  description: string;
+  status: string;
+  total_cost: number;
+  deadline: string;
+  created_at: string;
+  updated_at: string;
+}
+
+type TableType = 'materials' | 'operations' | 'orders';
+
 const Index = () => {
-  const [records, setRecords] = useState<Record[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TableType>('materials');
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [operations, setOperations] = useState<Operation[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<Record | null>(null);
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    category: '',
-    status: 'active',
-  });
+  const [editingItem, setEditingItem] = useState<any>(null);
+  const [formData, setFormData] = useState<any>({});
   const { toast } = useToast();
 
-  const fetchRecords = async () => {
+  const fetchData = async (table: TableType) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
-      
-      const response = await fetch(`${API_URL}?${params}`);
+
+      const response = await fetch(`${API_URL}?${params}`, {
+        headers: { 'X-Table-Name': table },
+      });
       const data = await response.json();
-      setRecords(data);
+
+      if (table === 'materials') setMaterials(data);
+      else if (table === 'operations') setOperations(data);
+      else setOrders(data);
     } catch (error) {
       toast({
         title: 'Ошибка',
-        description: 'Не удалось загрузить записи',
+        description: 'Не удалось загрузить данные',
         variant: 'destructive',
       });
     } finally {
@@ -76,66 +103,52 @@ const Index = () => {
   };
 
   useEffect(() => {
-    fetchRecords();
-  }, [searchQuery]);
+    fetchData(activeTab);
+  }, [activeTab, searchQuery]);
 
-  const handleOpenDialog = (record?: Record) => {
-    if (record) {
-      setEditingRecord(record);
-      setFormData({
-        title: record.title,
-        description: record.description,
-        category: record.category,
-        status: record.status,
-      });
+  const handleOpenDialog = (item?: any) => {
+    if (item) {
+      setEditingItem(item);
+      setFormData({ ...item });
     } else {
-      setEditingRecord(null);
-      setFormData({
-        title: '',
-        description: '',
-        category: '',
-        status: 'active',
-      });
+      setEditingItem(null);
+      if (activeTab === 'materials') {
+        setFormData({ name: '', unit: '', price_per_unit: 0, stock_quantity: 0 });
+      } else if (activeTab === 'operations') {
+        setFormData({ name: '', description: '', cost: 0, duration_minutes: 0 });
+      } else {
+        setFormData({ customer_name: '', description: '', status: 'pending', total_cost: 0, deadline: '' });
+      }
     }
     setIsDialogOpen(true);
   };
 
   const handleSave = async () => {
-    if (!formData.title.trim()) {
-      toast({
-        title: 'Ошибка',
-        description: 'Название обязательно',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     try {
-      const method = editingRecord ? 'PUT' : 'POST';
-      const url = editingRecord
-        ? `${API_URL}/${editingRecord.id}`
-        : API_URL;
+      const method = editingItem ? 'PUT' : 'POST';
+      const url = editingItem ? `${API_URL}/${editingItem.id}` : API_URL;
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Table-Name': activeTab,
+        },
         body: JSON.stringify(formData),
       });
 
       if (response.ok) {
         toast({
           title: 'Успешно',
-          description: editingRecord
-            ? 'Запись обновлена'
-            : 'Запись создана',
+          description: editingItem ? 'Обновлено' : 'Создано',
         });
         setIsDialogOpen(false);
-        fetchRecords();
+        fetchData(activeTab);
       }
     } catch (error) {
       toast({
         title: 'Ошибка',
-        description: 'Не удалось сохранить запись',
+        description: 'Не удалось сохранить',
         variant: 'destructive',
       });
     }
@@ -147,22 +160,287 @@ const Index = () => {
     try {
       const response = await fetch(`${API_URL}/${id}`, {
         method: 'DELETE',
+        headers: { 'X-Table-Name': activeTab },
       });
 
       if (response.ok) {
-        toast({
-          title: 'Успешно',
-          description: 'Запись удалена',
-        });
-        fetchRecords();
+        toast({ title: 'Успешно', description: 'Удалено' });
+        fetchData(activeTab);
       }
     } catch (error) {
       toast({
         title: 'Ошибка',
-        description: 'Не удалось удалить запись',
+        description: 'Не удалось удалить',
         variant: 'destructive',
       });
     }
+  };
+
+  const renderTable = () => {
+    const data = activeTab === 'materials' ? materials : activeTab === 'operations' ? operations : orders;
+
+    if (loading) {
+      return (
+        <div className="p-12 text-center text-muted-foreground">
+          <Icon name="Loader2" size={32} className="mx-auto animate-spin mb-3" />
+          Загрузка...
+        </div>
+      );
+    }
+
+    if (data.length === 0) {
+      return (
+        <div className="p-12 text-center text-muted-foreground">
+          <Icon name="Database" size={48} className="mx-auto mb-3 opacity-20" />
+          <p className="text-lg">Записей не найдено</p>
+        </div>
+      );
+    }
+
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow className="border-border/50 hover:bg-transparent">
+            {activeTab === 'materials' && (
+              <>
+                <TableHead className="font-medium">Название</TableHead>
+                <TableHead className="font-medium">Единица</TableHead>
+                <TableHead className="font-medium">Цена за ед.</TableHead>
+                <TableHead className="font-medium">Остаток</TableHead>
+                <TableHead className="text-right font-medium">Действия</TableHead>
+              </>
+            )}
+            {activeTab === 'operations' && (
+              <>
+                <TableHead className="font-medium">Название</TableHead>
+                <TableHead className="font-medium">Описание</TableHead>
+                <TableHead className="font-medium">Стоимость</TableHead>
+                <TableHead className="font-medium">Длительность (мин)</TableHead>
+                <TableHead className="text-right font-medium">Действия</TableHead>
+              </>
+            )}
+            {activeTab === 'orders' && (
+              <>
+                <TableHead className="font-medium">Клиент</TableHead>
+                <TableHead className="font-medium">Описание</TableHead>
+                <TableHead className="font-medium">Статус</TableHead>
+                <TableHead className="font-medium">Сумма</TableHead>
+                <TableHead className="font-medium">Срок</TableHead>
+                <TableHead className="text-right font-medium">Действия</TableHead>
+              </>
+            )}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.map((item: any) => (
+            <TableRow key={item.id} className="border-border/50 hover:bg-accent/50 transition-colors">
+              {activeTab === 'materials' && (
+                <>
+                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell>{item.unit}</TableCell>
+                  <TableCell>{item.price_per_unit} ₽</TableCell>
+                  <TableCell>{item.stock_quantity}</TableCell>
+                </>
+              )}
+              {activeTab === 'operations' && (
+                <>
+                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell className="max-w-md truncate text-muted-foreground">{item.description}</TableCell>
+                  <TableCell>{item.cost} ₽</TableCell>
+                  <TableCell>{item.duration_minutes}</TableCell>
+                </>
+              )}
+              {activeTab === 'orders' && (
+                <>
+                  <TableCell className="font-medium">{item.customer_name}</TableCell>
+                  <TableCell className="max-w-md truncate text-muted-foreground">{item.description}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                        item.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : item.status === 'in_progress'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-green-100 text-green-800'
+                      }`}
+                    >
+                      {item.status === 'pending' ? 'Ожидание' : item.status === 'in_progress' ? 'В работе' : 'Завершён'}
+                    </span>
+                  </TableCell>
+                  <TableCell>{item.total_cost} ₽</TableCell>
+                  <TableCell>{item.deadline ? new Date(item.deadline).toLocaleDateString('ru-RU') : '—'}</TableCell>
+                </>
+              )}
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(item)} className="h-8 w-8 p-0">
+                    <Icon name="Pencil" size={16} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(item.id)}
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                  >
+                    <Icon name="Trash2" size={16} />
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  };
+
+  const renderForm = () => {
+    if (activeTab === 'materials') {
+      return (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="name">Название *</Label>
+            <Input
+              id="name"
+              value={formData.name || ''}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Введите название материала"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="unit">Единица измерения *</Label>
+            <Input
+              id="unit"
+              value={formData.unit || ''}
+              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+              placeholder="кг, л, шт"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="price">Цена за единицу</Label>
+              <Input
+                id="price"
+                type="number"
+                value={formData.price_per_unit || 0}
+                onChange={(e) => setFormData({ ...formData, price_per_unit: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stock">Остаток</Label>
+              <Input
+                id="stock"
+                type="number"
+                value={formData.stock_quantity || 0}
+                onChange={(e) => setFormData({ ...formData, stock_quantity: parseFloat(e.target.value) })}
+              />
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    if (activeTab === 'operations') {
+      return (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="name">Название *</Label>
+            <Input
+              id="name"
+              value={formData.name || ''}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Введите название операции"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Описание</Label>
+            <Textarea
+              id="description"
+              value={formData.description || ''}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Добавьте описание"
+              rows={3}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="cost">Стоимость</Label>
+              <Input
+                id="cost"
+                type="number"
+                value={formData.cost || 0}
+                onChange={(e) => setFormData({ ...formData, cost: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="duration">Длительность (мин)</Label>
+              <Input
+                id="duration"
+                type="number"
+                value={formData.duration_minutes || 0}
+                onChange={(e) => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) })}
+              />
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <div className="space-y-2">
+          <Label htmlFor="customer">Клиент *</Label>
+          <Input
+            id="customer"
+            value={formData.customer_name || ''}
+            onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+            placeholder="Введите имя клиента"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="description">Описание</Label>
+          <Textarea
+            id="description"
+            value={formData.description || ''}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            placeholder="Описание заказа"
+            rows={3}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="status">Статус</Label>
+            <Select value={formData.status || 'pending'} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+              <SelectTrigger id="status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Ожидание</SelectItem>
+                <SelectItem value="in_progress">В работе</SelectItem>
+                <SelectItem value="completed">Завершён</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="total">Сумма</Label>
+            <Input
+              id="total"
+              type="number"
+              value={formData.total_cost || 0}
+              onChange={(e) => setFormData({ ...formData, total_cost: parseFloat(e.target.value) })}
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="deadline">Срок выполнения</Label>
+          <Input
+            id="deadline"
+            type="date"
+            value={formData.deadline || ''}
+            onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+          />
+        </div>
+      </>
+    );
   };
 
   return (
@@ -170,116 +448,56 @@ const Index = () => {
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-light tracking-tight text-foreground">
-              База данных
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              Управление записями PostgreSQL
-            </p>
+            <h1 className="text-4xl font-light tracking-tight text-foreground">База данных</h1>
+            <p className="text-muted-foreground mt-2">Управление производственными данными</p>
           </div>
-          <Button
-            onClick={() => handleOpenDialog()}
-            size="lg"
-            className="gap-2"
-          >
+          <Button onClick={() => handleOpenDialog()} size="lg" className="gap-2">
             <Icon name="Plus" size={18} />
             Создать
           </Button>
         </div>
 
         <Card className="border-border/50 shadow-sm">
-          <div className="p-6">
-            <div className="relative">
-              <Icon
-                name="Search"
-                size={20}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                placeholder="Поиск по названию или описанию..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-12 border-border/50"
-              />
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TableType)} className="w-full">
+            <div className="border-b border-border/50 px-6">
+              <TabsList className="bg-transparent h-14">
+                <TabsTrigger value="materials" className="gap-2">
+                  <Icon name="Package" size={18} />
+                  Материалы
+                </TabsTrigger>
+                <TabsTrigger value="operations" className="gap-2">
+                  <Icon name="Settings" size={18} />
+                  Операции
+                </TabsTrigger>
+                <TabsTrigger value="orders" className="gap-2">
+                  <Icon name="ShoppingCart" size={18} />
+                  Заказы
+                </TabsTrigger>
+              </TabsList>
             </div>
-          </div>
 
-          <div className="border-t border-border/50">
-            {loading ? (
-              <div className="p-12 text-center text-muted-foreground">
-                <Icon name="Loader2" size={32} className="mx-auto animate-spin mb-3" />
-                Загрузка...
+            <div className="p-6">
+              <div className="relative">
+                <Icon name="Search" size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Поиск..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 h-12 border-border/50"
+                />
               </div>
-            ) : records.length === 0 ? (
-              <div className="p-12 text-center text-muted-foreground">
-                <Icon name="Database" size={48} className="mx-auto mb-3 opacity-20" />
-                <p className="text-lg">Записей не найдено</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableHead className="font-medium">Название</TableHead>
-                    <TableHead className="font-medium">Описание</TableHead>
-                    <TableHead className="font-medium">Категория</TableHead>
-                    <TableHead className="font-medium">Статус</TableHead>
-                    <TableHead className="text-right font-medium">Действия</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {records.map((record) => (
-                    <TableRow
-                      key={record.id}
-                      className="border-border/50 hover:bg-accent/50 transition-colors"
-                    >
-                      <TableCell className="font-medium">
-                        {record.title}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground max-w-md truncate">
-                        {record.description}
-                      </TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center rounded-full bg-secondary px-3 py-1 text-xs font-medium">
-                          {record.category}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-                            record.status === 'active'
-                              ? 'bg-primary/10 text-primary'
-                              : 'bg-muted text-muted-foreground'
-                          }`}
-                        >
-                          {record.status === 'active' ? 'Активна' : 'Завершена'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenDialog(record)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Icon name="Pencil" size={16} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(record.id)}
-                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                          >
-                            <Icon name="Trash2" size={16} />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
+            </div>
+
+            <TabsContent value="materials" className="m-0 border-t border-border/50">
+              {renderTable()}
+            </TabsContent>
+            <TabsContent value="operations" className="m-0 border-t border-border/50">
+              {renderTable()}
+            </TabsContent>
+            <TabsContent value="orders" className="m-0 border-t border-border/50">
+              {renderTable()}
+            </TabsContent>
+          </Tabs>
         </Card>
       </div>
 
@@ -287,71 +505,18 @@ const Index = () => {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="text-2xl font-light">
-              {editingRecord ? 'Редактировать' : 'Создать запись'}
+              {editingItem ? 'Редактировать' : 'Создать'}
             </DialogTitle>
             <DialogDescription>
-              {editingRecord
-                ? 'Обновите информацию о записи'
-                : 'Добавьте новую запись в базу данных'}
+              {activeTab === 'materials' && 'Информация о материале'}
+              {activeTab === 'operations' && 'Информация об операции'}
+              {activeTab === 'orders' && 'Информация о заказе'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 pt-4">
-            <div className="space-y-2">
-              <Label htmlFor="title">Название *</Label>
-              <Input
-                id="title"
-                value={formData.title}
-                onChange={(e) =>
-                  setFormData({ ...formData, title: e.target.value })
-                }
-                placeholder="Введите название"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Описание</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="Добавьте описание"
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="category">Категория</Label>
-              <Input
-                id="category"
-                value={formData.category}
-                onChange={(e) =>
-                  setFormData({ ...formData, category: e.target.value })
-                }
-                placeholder="Укажите категорию"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="status">Статус</Label>
-              <Select
-                value={formData.status}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, status: value })
-                }
-              >
-                <SelectTrigger id="status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Активна</SelectItem>
-                  <SelectItem value="completed">Завершена</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {renderForm()}
             <div className="flex justify-end gap-3 pt-4">
-              <Button
-                variant="ghost"
-                onClick={() => setIsDialogOpen(false)}
-              >
+              <Button variant="ghost" onClick={() => setIsDialogOpen(false)}>
                 Отмена
               </Button>
               <Button onClick={handleSave} className="gap-2">
